@@ -30,6 +30,7 @@ After opening a PR:
 
 ```bash
 sha256sum --check openapi.sha256
+(cd .generator && OPENAPI_CONFIG=../openapi.config.json bun run generate)
 uvx ruff@0.16.2 format --check --line-length 120 sdk/python tests
 uvx ruff@0.16.2 check sdk/python tests
 python3 -m compileall -q sdk/python/src
@@ -43,7 +44,7 @@ CI checks Python 3.11 and 3.14 on Ubuntu. It verifies the versioned Platform con
 
 - The API/docs/SDK repository chain always follows `main`: cross-repository `ultralytics/openapi` checkouts must use `ref: main` and must never pin a commit SHA or tag.
 
-This repository contains generated SDKs for Ultralytics products. `openapi.config.json` defines the consumer configuration, while the versioned `openapi.json` snapshot and `openapi.sha256` pin the exact contract consumed by CI. `sdk/python/` is a generated descendant and must never be edited manually; update the contract snapshot, consumer configuration, or generic generator and regenerate. `tests/` owns focused consumer-level wire checks. `format.yml` runs Ultralytics Actions on pull requests, `ci.yml` owns deterministic regeneration, upstream drift detection, and package validation, and `publish.yml` owns version-gated tagging, releases, and PyPI trusted publishing.
+This repository contains generated SDKs for Ultralytics products. `openapi.config.json` defines the consumer configuration, while the versioned `openapi.json` snapshot and `openapi.sha256` pin the exact contract consumed by CI. `sdk/python/` is a generated descendant and must never be edited manually. The upstream `generatePython()` assembles the complete package: it combines the maintained CLI runtime `cli.py` from `python.cli.source` with the generated `MULTIPART_FILES` mapping and `__main__` block in one installed `cli.py`, and registers the sole `ul` entrypoint. The CLI discovers operations, argument types, and help from SDK signatures, annotations, and docstrings; only binary field names inside whole multipart bodies need generated metadata. All CLI parsing, routing, output, authentication commands, and YOLO delegation live in the root `cli.py`; there is no separate metadata file, launcher, or generated parser. `auth.py` owns the shared YOLO credential provider and writer. Change these sources or the contract, then regenerate with an `ultralytics/openapi` main checkout at `.generator/` and copy `.generator/generated/python/` to `sdk/python/`. The full assembled package remains subject to drift checks and replacement. `tests/` owns focused consumer-level checks. `format.yml` runs Ultralytics Actions on pull requests, `ci.yml` owns deterministic regeneration, upstream drift detection, and package validation, and `publish.yml` owns version-gated tagging, releases, and PyPI trusted publishing.
 
 ## Conventions
 

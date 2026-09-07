@@ -43,6 +43,62 @@ asyncio.run(main())
 
 The package includes typed responses, multipart uploads, retries for temporary failures, structured API errors, custom HTTP clients, and context-manager cleanup.
 
+## Unified `ul` CLI
+
+This package installs `ul`. Local commands lazily delegate to the existing YOLO parser, so install `ultralytics` in the same environment to use them. Cloud commands and authentication work without the ML package.
+
+```bash
+ul login                         # securely prompt for a Platform API key
+ul logout                        # clear the shared saved key, not environment variables
+ul train model=yolo26n.pt data=coco8.yaml epochs=100
+ul predict model=yolo26n.pt source="image with spaces.jpg"
+
+ul cloud --help                  # list every generated API command
+ul cloud datasets images --help # describe an operation's arguments
+ul cloud datasets list
+ul cloud datasets images dataset=coco8 limit=20
+ul cloud models list project=inspection
+ul cloud datasets list owner=another-user
+ul cloud datasets                         # list your datasets
+ul cloud datasets dataset=coco8           # retrieve one dataset
+ul cloud models project=inspection        # list models in a project
+ul cloud models project=inspection model=experiment # retrieve one model
+```
+
+Cloud syntax follows YOLO: `key=value`, not `--key value`. Command names use hyphens (`storage-integrations`, `signed-url`); argument names match SDK Python keywords (`train_args`, `from_`, `owner_body`). An omitted **path** `owner` is resolved once from the effective credential's account username. Explicit owners always win. No profiles, cached usernames, inferred projects, or inferred clone destinations are introduced. Optional creation owners retain the API's own defaults.
+
+Only supplied values reach SDK methods: omission, `False`, `0`, and nullable `None`/`null` remain distinct. Booleans are case-insensitive and may be bare; schema-declared strings remain strings (including `license=None`). Nested objects, arrays, and whole union bodies use JSON. Structured inputs also accept `@request.json` or `@-` for stdin; only one argument may consume stdin. Binary fields require `@path` and are opened only when the contract declares them as binary:
+
+```bash
+ul cloud training start model_id=MODEL_ID train_args=@train.json
+ul cloud models predict project=inspection model=experiment body='{"file":"@image.jpg","conf":0.25}'
+ul cloud models predict project=inspection model=experiment body=@-
+```
+
+Each resource command makes **one operation call**, plus an account lookup if owner inference is needed. It prints the complete response envelope as JSON, text, or bytes. Pagination is explicit: use the endpoint's own `limit`, `offset`, `cursor`, or `page_token` arguments; nothing implicitly fetches all pages. Serialization, credentials, transport, retries, and API errors remain owned by the SDK. The CLI reads SDK signatures and annotations to check input types, scalar choices, and required arguments; the API validates nested JSON bodies, including required fields. It does not interpret JSON Schema at runtime.
+
+For resources with a GET `list` operation, the operation may be omitted. A matching GET `retrieve` operation is selected when its item identifier is supplied. For example, `project` scopes a model list, while `model` identifies one model. This applies to datasets, projects, deployments, models, and exports; storage integrations support implicit listing only. Explicit verbs remain available. Missing retrieval arguments fail without falling back to listing. Resources without these defaults show help, and `--help` never makes an API request. Writes always require an explicit operation.
+
+### Submit and inspect cloud jobs
+
+Use generated API operations directly. Each invocation submits, retrieves, or cancels one operation and exits; there are no cloud workflow shortcuts, polling loops, or automatic artifact downloads.
+
+```bash
+ul cloud training start model_id=MODEL_ID gpu_type=rtx-4090 train_args=@train.json
+ul cloud models training project=inspection model=experiment
+ul cloud models delete-training project=inspection model=experiment
+ul cloud deployments predict deployment=production body='{"file":"@image.jpg"}'
+ul cloud exports create project=inspection model=experiment format=onnx
+ul cloud exports retrieve project=inspection model=experiment export_id=EXPORT_ID
+ul cloud exports delete project=inspection model=experiment export_id=EXPORT_ID
+```
+
+Cloud execution may incur charges and never falls back to local execution. Inspect the response for job status or artifact URLs. Exit codes are 0 for a successful API call (not necessarily a completed job), 1 for API/network errors, 2 for local input errors, and 130 for interruption. Missing nested fields are reported by the API with exit code 1 and its error message; missing required command arguments fail locally with exit code 2. Interrupting the CLI does not cancel a submitted job; use the explicit cancellation operation.
+
+Local `ul train` remains local even with `ul://` inputs. The existing YOLO callbacks continue to own automatic tracking, cancellation, retries, and checkpoint promotion. `yolo` and `ultralytics` are unchanged.
+
+`ULTRALYTICS_PLATFORM_URL` can select another API origin for CLI invocations. Credentials use the same environment-first and saved-settings fallback as the SDK and `yolo login`; `ul login` validates a key before changing only `api_key` in those settings. A Unix system command may also be named `ul`: activate your Python environment to select this executable, or use `python -m ultralytics_platform.cli` unambiguously.
+
 ## 🧩 One Contract, Typed Python
 
 The [Ultralytics Platform API](https://platform.ultralytics.com) contract is the single source of truth for the generated client:
