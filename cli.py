@@ -1,3 +1,4 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 """Unified Ultralytics CLI: local YOLO commands and Platform SDK operations discovered from the SDK itself."""
 
 from __future__ import annotations

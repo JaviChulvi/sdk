@@ -1,3 +1,4 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 """Guard the new CLI's mutation-facing input and executable boundaries without live API calls."""
 
 from __future__ import annotations
