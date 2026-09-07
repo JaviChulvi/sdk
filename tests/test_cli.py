@@ -59,15 +59,13 @@ def test_cli_wire_and_auth(tmp_path):
         )
 
     try:
-        assert run("login", "ul_" + "a" * 40).returncode == 0
         settings = tmp_path / "Ultralytics" / "settings.json"
-        if os.name == "posix":
-            assert settings.stat().st_mode & 0o777 == 0o600
-        saved = json.loads(settings.read_text())
-        saved["runs_dir"] = "custom runs"
+        settings.parent.mkdir()
+        saved = {"api_key": "ul_" + "a" * 40, "runs_dir": "custom runs"}
         settings.write_text(json.dumps(saved))
         assert run("cloud", "datasets", "limit=0").returncode == 0
         assert [item[1] for item in requests[-2:]] == ["/api/account/summary", "/api/datasets/jane?limit=0"]
+        assert requests[-1][2]["Authorization"] == f"Bearer {saved['api_key']}"
         env["ULTRALYTICS_API_KEY"] = "environment-key"
         count = len(requests)
         assert run("cloud", "exports", "owner=team", "project=p", "model=m", "export_id=e").returncode == 0
@@ -116,11 +114,10 @@ def test_cli_wire_and_auth(tmp_path):
         assert result.returncode == 2 and len(requests) == count
         failed = run("cloud", "training", "start", "model_id=m", 'train_args={"epochs":100}')
         assert failed.returncode == 1 and "HTTP 422): model and data are required" in failed.stderr
-        failed = run("login", "invalid")
+        env["ULTRALYTICS_API_KEY"] = "invalid"
+        failed = run("cloud", "account", "summary")
         assert failed.returncode == 1 and "sensitive" not in failed.stderr
-        assert json.loads(settings.read_text())["api_key"] == saved["api_key"]
-        assert run("logout").returncode == 0
-        assert json.loads(settings.read_text()) == {**saved, "api_key": ""}
+        assert json.loads(settings.read_text()) == saved
     finally:
         server.shutdown()
         server.server_close()

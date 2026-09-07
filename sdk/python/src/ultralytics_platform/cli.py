@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import getpass
 import importlib.util
 import inspect
 import json
@@ -19,7 +18,6 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal, get_args, get_origin, get_type_hints
 
 from . import APIConnectionError, APIError, NotGiven, Platform
-from ._auth import save_api_key
 
 MULTIPART_FILES: dict[str, list[str]] = {}  # Filled by generatePython(): "resource.method" -> binary body fields.
 JSON_TYPES = {type(None): "null", bool: "boolean", int: "integer", float: "number", str: "string", list: "array"}
@@ -248,10 +246,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not args or args in (["help"], ["--help"], ["-h"]):
             print(
-                "ul login [API_KEY] | logout | version\n"
+                "ul login API_KEY | logout | version\n"
                 "ul train|val|predict|export|track|benchmark key=value ...\n"
                 "ul cloud <resource> [operation] key=value ...\n"
-                "Local commands require ultralytics. Use ul cloud --help to list API commands.\n"
+                "Login/logout and local commands require ultralytics. Use ul cloud --help to list API commands.\n"
                 "Omitted path owners default to the logged-in username. No --key value options."
             )
             return 0
@@ -260,33 +258,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args[0] == "cloud":
             return dispatch(args[1:])
-        if args[0] in {"login", "logout"}:
-            login = args[0] == "login"
-            usage = "ul login [API_KEY]" if login else "ul logout"
-            if args[1:] in (["help"], ["--help"], ["-h"]):
-                print(f"{usage} — {'validate and save' if login else 'remove'} the shared YOLO credential.")
-                return 0
-            if len(args) > (2 if login else 1):
-                raise ValueError(f"Use {usage}")
-            if login:
-                key = args[1] if len(args) == 2 else getpass.getpass("Platform API key: ")
-                if not key:
-                    raise ValueError("API key is required")
-                with Platform(
-                    api_key=key, base_url=os.getenv("ULTRALYTICS_PLATFORM_URL", "https://platform.ultralytics.com")
-                ) as client:
-                    account = client.account.summary()
-                save_api_key(key)
-                print(f"Logged in as {account['username']}.")
-            else:
-                save_api_key("")
-                print("Saved Platform credential removed.")
-            if os.getenv("ULTRALYTICS_API_KEY"):
-                print("ULTRALYTICS_API_KEY remains the effective credential while set.", file=sys.stderr)
-            return 0
         if importlib.util.find_spec("ultralytics") is None:
             raise ValueError(
-                "Local YOLO commands require ultralytics. Install it in this environment: pip install ultralytics"
+                "This command requires ultralytics. Install it in this environment: pip install ultralytics"
             )
         original = sys.argv[:]
         try:
@@ -309,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     except APIConnectionError:
         print("Could not connect to API.", file=sys.stderr)
         return 1
-    except (ValueError, OSError, EOFError) as error:
+    except (ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
