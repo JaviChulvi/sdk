@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from collections.abc import Sequence
 from typing import Any
@@ -11,7 +12,17 @@ from urllib.parse import quote
 
 import httpx
 
+from ._auth import get_api_key
 from ._exceptions import APIConnectionError, APIError
+
+
+def _resolve_api_key(api_key: str | None) -> str | None:
+    """Resolve explicit credentials, the environment, then the optional provider."""
+    if api_key is not None:
+        return api_key
+    if api_key := os.environ.get("ULTRALYTICS_API_KEY"):
+        return api_key
+    return get_api_key()
 
 
 class NotGiven:
