@@ -218,25 +218,16 @@ def dispatch(tokens: list[str]) -> int:
         if method is None and tokens and not help_requested:
             raise ValueError("Choose a resource operation before supplying arguments")
         if method is None or help_requested:
-            print("<resource> [operation] key=value ... (one API request, no auto-pagination)")
+            print("<resource> [operation] key=value ... (path owner defaults to the logged-in username)")
             listing = {resource: {method: methods[method]} if method else methods} if resource else resources
             for resource_name, members in listing.items():
-                implicit = defaults(resources[resource_name])
                 for method_name, member in members.items():
                     doc = inspect.getdoc(member) or ""
                     print(f"  {resource_name} {method_name}: {doc.partition(chr(10))[0].rstrip('.')}")
-                    if method_name in implicit:
-                        keys = implicit[method_name]
-                        print("    Default: " + ("retrieve when supplied: " + ", ".join(keys) if keys else "list"))
                     if method is not None:
-                        details = [
-                            line
-                            for line in doc.partition("\n")[2].strip().splitlines()
-                            if not line.startswith(("    timeout (", "    extra_headers ("))
-                        ]
-                        print("    " + "\n    ".join(details))
-                        if describe(member).get("owner", {}).get("path"):
-                            print("    owner defaults to the logged-in username")
+                        for line in doc.splitlines()[1:]:
+                            if not line.startswith(("    timeout (", "    extra_headers (")):
+                                print(line)
             return 0
         arguments = describe(methods[method])
         values = parse(raw, arguments)

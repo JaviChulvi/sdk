@@ -22,7 +22,7 @@ Typed SDKs for the [Ultralytics Platform API](https://platform.ultralytics.com),
 
 ## 🐍 Python
 
-The Python package also owns the unified `ul` CLI: YOLO-style `key=value` arguments, lazy local YOLO delegation, and cloud resource commands discovered from SDK signatures, annotations, and docstrings. See the [CLI guide](README.python.md#unified-ul-cli) for login, inferred owners, structured inputs, and cloud job operations. The CLI runtime (`cli.py`) and credential integration (`auth.py`) are maintained here and included through `python.cli.source` and `python.authProvider`. The OpenAPI Python generator assembles the runtime and a `MULTIPART_FILES` mapping of binary fields inside whole multipart bodies into one installed `cli.py`; there is no separate metadata file, launcher, or generated parser.
+The package includes the unified `ul` CLI for local YOLO and Platform SDK commands; see the [CLI guide](README.python.md#unified-ul-cli). Maintain `cli.py` and `auth.py` at the repository root, then regenerate their installed copies through the configured `python.cli.source` and `python.authProvider` hooks.
 
 [![PyPI - Version](https://img.shields.io/pypi/v/ultralytics-platform?logo=pypi&logoColor=white)](https://pypi.org/project/ultralytics-platform/) [![Ultralytics Downloads](https://static.pepy.tech/badge/ultralytics-platform)](https://clickpy.clickhouse.com/dashboard/ultralytics-platform) [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ultralytics-platform?logo=python&logoColor=gold)](https://pypi.org/project/ultralytics-platform/)
 
