@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any, BinaryIO, Literal, get_args, get_origin, get_type_hints
 
 from . import APIConnectionError, APIError, NotGiven, Platform
+from ._cli_metadata import MULTIPART_FILES
 
-MULTIPART_FILES: dict[str, list[str]] = {}  # Filled by generatePython(): "resource.method" -> binary body fields.
 JSON_TYPES = {type(None): "null", bool: "boolean", int: "integer", float: "number", str: "string", list: "array"}
 JSON_TYPES |= {dict: "object", Sequence: "array"}
 
@@ -294,3 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("Interrupted.", file=sys.stderr)
         return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
