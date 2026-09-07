@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from tempfile import mkstemp
 
 
 def settings_path() -> Path:
@@ -48,5 +49,10 @@ def save_api_key(api_key: str) -> None:
         raise ValueError("YOLO settings must be a JSON object; refusing to overwrite them")  # noqa: TRY004
     settings["api_key"] = api_key
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(settings, handle, indent=2)
+    descriptor, temporary = mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(settings, handle, indent=2)
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)

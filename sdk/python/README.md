@@ -65,7 +65,7 @@ ul cloud models project=inspection        # list models in a project
 ul cloud models project=inspection model=experiment # retrieve one model
 ```
 
-Cloud syntax follows YOLO: `key=value`, not `--key value`. Command names use hyphens (`storage-integrations`, `signed-url`); argument names match SDK Python keywords (`train_args`, `from_`, `owner_body`). An omitted **path** `owner` is resolved once from the effective credential's account username. Explicit owners always win. No profiles, cached usernames, inferred projects, or inferred clone destinations are introduced. Optional creation owners retain the API's own defaults.
+Cloud syntax follows YOLO: `key=value`, not `--key value`. A separate `help`, `--help`, or `-h` token shows help; to pass a literal help value, keep it in one assignment such as `name=--help`. Command names use hyphens (`storage-integrations`, `signed-url`); argument names match SDK Python keywords (`train_args`, `from_`, `owner_body`). An omitted **path** `owner` is resolved once from the effective credential's account username. Explicit owners always win. No profiles, cached usernames, inferred projects, or inferred clone destinations are introduced. Optional creation owners retain the API's own defaults.
 
 Only supplied values reach SDK methods: omission, `False`, `0`, and nullable `None`/`null` remain distinct. Booleans are case-insensitive and may be bare; schema-declared strings remain strings (including `license=None`). Nested objects, arrays, and whole union bodies use JSON. Structured inputs also accept `@request.json` or `@-` for stdin; only one argument may consume stdin. Binary fields require `@path` and are opened only when the contract declares them as binary:
 

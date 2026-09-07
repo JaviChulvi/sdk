@@ -191,6 +191,8 @@ def test_cli_wire_and_auth(tmp_path):
     try:
         assert run("login", "ul_" + "a" * 40).returncode == 0
         settings = tmp_path / "Ultralytics" / "settings.json"
+        if os.name == "posix":
+            assert settings.stat().st_mode & 0o777 == 0o600
         saved = json.loads(settings.read_text())
         saved["runs_dir"] = "custom runs"
         settings.write_text(json.dumps(saved))
@@ -221,10 +223,11 @@ def test_cli_wire_and_auth(tmp_path):
             assert len(requests) == count + 1 and requests[-1][:2] == ("GET", endpoint)
         count = len(requests)
         assert run("cloud", "datasets", "--help").returncode == 0
-        for flag in ("help", "--help", "-h"):
-            help_result = run("cloud", "projects", "create", "project=p", "name=token=", flag)
-            assert help_result.returncode == 0 and "name (" in help_result.stdout
-            assert "timeout (" not in help_result.stdout and "extra_headers (" not in help_result.stdout
+        for name in (["name=token="], ["name="], ["name", "="]):
+            for flag in ("help", "--help", "-h"):
+                help_result = run("cloud", "projects", "create", "project=p", *name, flag)
+                assert help_result.returncode == 0 and "name (" in help_result.stdout
+                assert "timeout (" not in help_result.stdout and "extra_headers (" not in help_result.stdout
         assert run("cloud", "datasets", "dataset=coco8", "--help").returncode == 0
         assert run("cloud", "training").returncode == 0
         assert run("cloud", "models", "model=m").returncode == 2
@@ -235,7 +238,7 @@ def test_cli_wire_and_auth(tmp_path):
         assert [item[1] for item in requests[-2:]] == ["/api/account/summary", "/api/datasets/jane/coco8"]
         for value in ("help", "--help", "-h", "a=b", "https://example.com/?a=b&c=d"):
             count = len(requests)
-            assert run("cloud", "projects", "create", "project=p", "name", "=", value).returncode == 0
+            assert run("cloud", "projects", "create", "project=p", f"name={value}").returncode == 0
             assert len(requests) == count + 1 and json.loads(requests[-1][3])["name"] == value
         assert (
             run(

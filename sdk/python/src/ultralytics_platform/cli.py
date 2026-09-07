@@ -75,7 +75,13 @@ def assignments(tokens: list[str]) -> dict[str, str | None]:
             i += 1
             token += tokens[i]
         key, separator, value = token.partition("=")
-        if separator and not value and i + 1 < len(tokens) and (tokens[i] == "=" or "=" not in tokens[i + 1]):
+        if (
+            separator
+            and not value
+            and i + 1 < len(tokens)
+            and tokens[i + 1] not in {"help", "--help", "-h"}
+            and (tokens[i] == "=" or "=" not in tokens[i + 1])
+        ):
             i += 1
             value = tokens[i]
         i += 1
