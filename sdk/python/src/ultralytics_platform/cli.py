@@ -75,11 +75,11 @@ def assignments(tokens: list[str]) -> dict[str, str | None]:
         if i + 1 < len(tokens) and tokens[i + 1].startswith("=") and "=" not in token:
             i += 1
             token += tokens[i]
-        if token.endswith("=") and i + 1 < len(tokens) and (tokens[i] == "=" or "=" not in tokens[i + 1]):
-            i += 1
-            token += tokens[i]
-        i += 1
         key, separator, value = token.partition("=")
+        if separator and not value and i + 1 < len(tokens) and (tokens[i] == "=" or "=" not in tokens[i + 1]):
+            i += 1
+            value = tokens[i]
+        i += 1
         if (key.startswith("-") and token not in {"--help", "-h"}) or not key:
             raise ValueError("Use key=value arguments, not --key value")
         if key in result:
@@ -224,7 +224,12 @@ def dispatch(tokens: list[str]) -> int:
                         keys = implicit[method_name]
                         print("    Default: " + ("retrieve when supplied: " + ", ".join(keys) if keys else "list"))
                     if method is not None:
-                        print("    " + doc.partition("\n")[2].strip().replace("\n", "\n    "))
+                        details = [
+                            line
+                            for line in doc.partition("\n")[2].strip().splitlines()
+                            if not line.startswith(("    timeout (", "    extra_headers ("))
+                        ]
+                        print("    " + "\n    ".join(details))
                         if describe(member).get("owner", {}).get("path"):
                             print("    owner defaults to the logged-in username")
             return 0

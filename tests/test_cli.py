@@ -69,6 +69,8 @@ def test_values_and_files(tmp_path):
             "license": "None",
         }
         assert parsed("models update", ["project=p", "model=m", "starred"], stack)["starred"] is True
+        args = parsed("models update", ["project=p", "model=m", "description=token=", "starred"], stack)
+        assert args["description"] == "token=" and args["starred"] is True
         for text, expected in (("description=", ""), ("description=token=", "token=")):
             args = parsed("models update", ["project=p", "model=m", text, "starred=False"], stack)
             assert args["description"] == expected and args["starred"] is False
@@ -218,6 +220,10 @@ def test_cli_wire_and_auth(tmp_path):
             assert len(requests) == count + 1 and requests[-1][:2] == ("GET", endpoint)
         count = len(requests)
         assert run("cloud", "datasets", "--help").returncode == 0
+        for flag in ("help", "--help", "-h"):
+            help_result = run("cloud", "projects", "create", "project=p", "name=token=", flag)
+            assert help_result.returncode == 0 and "name (" in help_result.stdout
+            assert "timeout (" not in help_result.stdout and "extra_headers (" not in help_result.stdout
         assert run("cloud", "datasets", "dataset=coco8", "--help").returncode == 0
         assert run("cloud", "training").returncode == 0
         assert run("cloud", "models", "model=m").returncode == 2
