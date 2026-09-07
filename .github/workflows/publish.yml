@@ -47,9 +47,12 @@ jobs:
           PYPI_DISPATCH: ${{ github.event.inputs.pypi }}
         run: |
           import os
+          import re
           from actions.utils import check_pypi_version
           from packaging.version import Version
           local_version, online_version, publish = check_pypi_version("sdk/python/pyproject.toml")
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", local_version):
+              raise ValueError(f"Ultralytics releases require MAJOR.MINOR.PATCH: {local_version}")
           # Contract versions can skip releases, so do not apply the shared patch-gap limit.
           publish = publish or (online_version is not None and Version(local_version) > Version(online_version))
           publish = publish or os.environ.get("PYPI_DISPATCH") == "true"  # manual recovery re-run
