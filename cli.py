@@ -13,7 +13,7 @@ import types
 import typing
 from collections.abc import Sequence
 from contextlib import ExitStack
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, get_args, get_origin, get_type_hints
 
@@ -248,13 +248,18 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 "ul login API_KEY | logout | version\n"
                 "ul train|val|predict|export|track|benchmark key=value ...\n"
+                "ul settings|checks|cfg|copy-cfg|solutions ...\n"
                 "ul cloud <resource> [operation] key=value ...\n"
                 "Login/logout and local commands require ultralytics. Use ul cloud --help to list API commands.\n"
                 "Omitted path owners default to the logged-in username. No --key value options."
             )
             return 0
         if args in (["version"], ["--version"]):
-            print(version("ultralytics-platform"))
+            print(f"ultralytics-platform {version('ultralytics-platform')}")
+            try:
+                print(f"ultralytics {version('ultralytics')}")
+            except PackageNotFoundError:
+                print("ultralytics not installed")
             return 0
         if args[0] == "cloud":
             return dispatch(args[1:])
