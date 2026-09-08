@@ -83,6 +83,9 @@ def test_cli_wire_and_auth(tmp_path):
         assert run("cloud", "datasets", "dataset=coco8", "limit=1").returncode == 2
         failed = run("cloud", "datasets", "images", "dataset=d", "limit=private-value")
         assert failed.returncode == 2 and "private-value" not in failed.stderr
+        for number in ("NaN", "Infinity", "-Infinity", "1e999"):
+            failed = run("cloud", "models", "predict", "project=p", "model=m", f'body={{"nested":[{number}]}}')
+            assert failed.returncode == 2
         assert len(requests) == count
         assert run("cloud", "projects", "create", "project=p", "name=--help").returncode == 0
         assert json.loads(requests[-1][3])["name"] == "--help"

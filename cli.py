@@ -6,7 +6,6 @@ from __future__ import annotations
 import importlib.util
 import inspect
 import json
-import math
 import os
 import sys
 import types
@@ -129,13 +128,12 @@ def parse(raw: dict[str, str | None], arguments: dict[str, dict]) -> dict:
                 value = float(text)
             else:
                 value = json.loads(text)
+            json.dumps(value, allow_nan=False)  # Reject non-finite numbers at any depth.
         except ValueError as error:
             raise ValueError(f"{name}: expected {expected}; objects and arrays require valid JSON") from error
         actual = JSON_TYPES.get(type(value))
         if kinds_ and actual not in kinds_ and not (actual == "integer" and "number" in kinds_):
             raise ValueError(f"{name}: expected {expected}")
-        if isinstance(value, float) and not math.isfinite(value):
-            raise ValueError(f"{name}: number must be finite")
         if arg["choices"] is not None and value not in arg["choices"]:
             raise ValueError(f"{name}: choose one of {json.dumps(arg['choices'])}")
         result[name] = value
