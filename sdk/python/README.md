@@ -48,7 +48,7 @@ The package includes typed responses, multipart uploads, retries for temporary f
 This package installs `ul`. Cloud commands work without the ML package; local commands lazily delegate to `ultralytics`, which must be installed in the same environment. Existing `yolo` behavior, including local training with `ul://` inputs, is unchanged.
 
 ```bash
-ul login                        # prompt for and validate a Platform API key
+ul login API_KEY                # validate and save a Platform API key
 ul logout                       # clear the saved key
 ul train model=yolo26n.pt data=coco8.yaml epochs=100
 ul cloud --help
