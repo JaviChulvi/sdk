@@ -63,7 +63,7 @@ def describe(method) -> dict[str, dict]:
 
 
 def assignments(tokens: list[str]) -> dict[str, str | None]:
-    """Normalize spaces around '=' without joining or splitting shell argument values."""
+    """Allow spaces before '=' while preserving empty values and subsequent shell arguments."""
     result = {}
     i = 0
     while i < len(tokens):
@@ -72,15 +72,6 @@ def assignments(tokens: list[str]) -> dict[str, str | None]:
             i += 1
             token += tokens[i]
         key, separator, value = token.partition("=")
-        if (
-            separator
-            and not value
-            and i + 1 < len(tokens)
-            and tokens[i + 1] not in {"help", "--help", "-h"}
-            and (tokens[i] == "=" or "=" not in tokens[i + 1])
-        ):
-            i += 1
-            value = tokens[i]
         i += 1
         if (key.startswith("-") and token not in {"--help", "-h"}) or not key:
             raise ValueError("Use key=value arguments, not --key value")

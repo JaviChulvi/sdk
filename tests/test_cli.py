@@ -103,6 +103,9 @@ def test_cli_wire_and_auth(tmp_path):
         )
         assert result.returncode == 0 and json.loads(result.stdout) == {"ok": True}
         assert json.loads(requests[-1][3]) == {"starred": False, "epochs": 0, "color": None, "license": "None"}
+        for name in (["name="], ["name", "="]):
+            result = run("cloud", "models", "update", "owner=jane", "project=p", "model=m", *name, "starred")
+            assert result.returncode == 0 and json.loads(requests[-1][3]) == {"name": "", "starred": True}
         image = tmp_path / "image with spaces.jpg"
         image.write_bytes(b"binary image contents")
         request = tmp_path / "request.json"
