@@ -296,8 +296,8 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> Path:
         root, declared = Path(data["path"]), YAML.load(yaml_file)  # declared paths keep symlinked splits under root
         values = [declared[split] for split in ("train", "val", "test") if declared.get(split)]
         splits = [root / value for item in values for value in (item if isinstance(item, list) else [item])]
-        if not all(split.is_dir() for split in splits):
-            raise ValueError("Cloud uploads require split directories, not image lists")
+        if not all(split.is_dir() and Path(os.path.abspath(split)).is_relative_to(root) for split in splits):
+            raise ValueError("Cloud uploads require split directories under the dataset root, not image lists")
         siblings = ("labels", data.get("masks_dir") or "masks", "depth")  # YOLO mirrors images/ per split
         directories = splits + [Path(*(n if p == "images" else p for p in s.parts)) for s in splits for n in siblings]
     archive = Path(destination) / f"{root.name}.zip"
