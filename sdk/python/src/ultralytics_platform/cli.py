@@ -547,7 +547,10 @@ def cloud_export(client: Platform, tokens: list[str]) -> int:
         print(f"Model: {uri}")
     owner, project, model = uri[5:].split("/")
     gpu_type, fmt = args.pop("gpu_type", NOT_GIVEN), args.pop("format", "torchscript")
-    for key in ("save_dir", "device", "exist_ok", "mode", "task"):
+    ignored = args.keys() & {"save", "plots", "workers", "cache"}
+    if ignored:
+        print(f"Warning: cloud export ignores local options: {', '.join(sorted(ignored))}.", file=sys.stderr)
+    for key in ("save_dir", "device", "exist_ok", "mode", "task", *ignored):
         args.pop(key, None)
     job = client.exports.create(owner, project, model, format=fmt, gpu_type=gpu_type, args=args)
     print(f"Export: {job['id']} ({job['status']})")
