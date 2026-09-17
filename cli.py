@@ -422,7 +422,7 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
     return 0
 
 
-def prediction_result(image, path: str, response: dict, names: dict, task: str, args):
+def prediction_result(image, path: str, prediction: dict, names: dict, task: str, args):
     """Adapt Platform summaries to YOLO Results so its plotting and saving stay the single owner."""
     import base64
 
@@ -432,7 +432,7 @@ def prediction_result(image, path: str, response: dict, names: dict, task: str, 
     from ultralytics.engine.results import Results
     from ultralytics.utils.ops import xyxyxyxy2xywhr
 
-    rows, values = response["results"], {}
+    rows, values = prediction["results"], {}
     if task == "classify":
         values["probs"] = np.zeros(len(names), dtype=np.float32)
         for row in rows:
@@ -461,14 +461,14 @@ def prediction_result(image, path: str, response: dict, names: dict, task: str, 
                 dtype=np.float32,
             )
     for key in ("semantic_mask", "depth"):
-        if key in response:
-            encoded = response[key]
+        if key in prediction:
+            encoded = prediction[key]
             pixels = cv2.imdecode(np.frombuffer(base64.b64decode(encoded["data"]), np.uint8), cv2.IMREAD_UNCHANGED)
             if key == "depth":
                 pixels = pixels.astype(np.float32) * encoded["max"] / (255 if encoded["bits"] == 8 else 65535)
                 pixels = cv2.resize(pixels, (image.shape[1], image.shape[0]))
             values[key] = pixels
-    return Results(image, path, names, speed=response["speed"], **values)
+    return Results(image, path, names, speed=prediction["speed"], **values)
 
 
 def save_predictions(source: Path, response: dict, args: dict) -> None:
