@@ -25,8 +25,12 @@ from ._cli_metadata import MULTIPART_FILES
 
 JSON_TYPES = {type(None): "null", bool: "boolean", int: "integer", float: "number", str: "string", list: "array"}
 JSON_TYPES |= {dict: "object", Sequence: "array"}
-PLATFORM_URL = os.getenv("ULTRALYTICS_PLATFORM_URL", "https://platform.ultralytics.com").rstrip("/")
 OFFICIAL_FAMILIES = ("yolo26", "yolo11", "yolov8", "yolov5")  # public ultralytics/<family> projects on Platform
+
+
+def platform_url() -> str:
+    """Platform origin, read per invocation so ULTRALYTICS_PLATFORM_URL applies after import."""
+    return os.getenv("ULTRALYTICS_PLATFORM_URL", "https://platform.ultralytics.com").rstrip("/")
 
 
 def kinds(annotation: Any) -> tuple[set[str], list | None]:
@@ -274,7 +278,7 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> tuple[
     task = task or ("classify" if source.is_dir() and not any(source.rglob("*.yaml")) else "detect")
     if source.is_file() and (zipfile.is_zipfile(source) or is_tarfile(source)):
         return source, task
-    yaml_file = None
+    yaml_file, declared = None, {}
     if task == "classify":
         root, directories = source, [source / split for split in ("train", "val", "test")]
         if not (source / "train").is_dir() or not any((source / split).is_dir() for split in ("val", "test")):
@@ -293,8 +297,9 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> tuple[
         directories = splits + [Path(*(n if p == "images" else p for p in s.parts)) for s in splits for n in siblings]
     archive = Path(destination) / f"{root.name}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
-        if yaml_file:
-            output.write(yaml_file, "data.yaml")
+        if yaml_file:  # splits are relative to the archive root; a local path: key would point outside it
+            YAML.save(archive.with_name("data.yaml"), {key: value for key, value in declared.items() if key != "path"})
+            output.write(archive.with_name("data.yaml"), "data.yaml")
         for file in sorted({file for directory in directories for file in directory.rglob("*")}):
             if (
                 file.is_file()
@@ -392,7 +397,9 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
         if name:
             body |= {"model": slugify(name), "name": name}
         target = client.models.create(body=body)
-        print(f"Run: {PLATFORM_URL}/{target['owner']}/{target['project']}/{target['model']} (model_id={target['id']})")
+        print(
+            f"Run: {platform_url()}/{target['owner']}/{target['project']}/{target['model']} (model_id={target['id']})"
+        )
         output(client.training.start(model_id=target["id"], train_args=args, gpu_type=gpu_type))
         model_path = (target["owner"], target["project"], target["model"])
         job = wait_job(lambda: client.models.training(*model_path)["job"])
@@ -415,7 +422,7 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
     return 0
 
 
-def prediction_result(image, path: str, response: dict, metadata: dict, args):
+def prediction_result(image, path: str, response: dict, names: dict, task: str, args):
     """Adapt Platform summaries to YOLO Results so its plotting and saving stay the single owner."""
     import base64
 
@@ -425,9 +432,7 @@ def prediction_result(image, path: str, response: dict, metadata: dict, args):
     from ultralytics.engine.results import Results
     from ultralytics.utils.ops import xyxyxyxy2xywhr
 
-    names = dict(enumerate(metadata["classNames"]))
-    rows, task = response["results"], metadata["task"]
-    values = {}
+    rows, values = response["results"], {}
     if task == "classify":
         values["probs"] = np.zeros(len(names), dtype=np.float32)
         for row in rows:
@@ -472,8 +477,12 @@ def save_predictions(source: Path, response: dict, args: dict) -> None:
     from ultralytics.cfg import DEFAULT_CFG_DICT
     from ultralytics.data.build import load_inference_source
     from ultralytics.engine.predictor import BasePredictor
+    from ultralytics.nn.autobackend import default_class_names
 
-    task = response["metadata"]["task"]
+    metadata = response["metadata"]  # classNames and task are optional in the contract
+    names = dict(enumerate(metadata["classNames"])) if metadata.get("classNames") else default_class_names()
+    if (task := metadata.get("task")) is None:
+        raise ValueError("Platform did not report the model task, so predictions cannot be converted")
     writer = BasePredictor(cfg=DEFAULT_CFG_DICT | args | {"task": task, "mode": "predict"})
     directory = writer.save_dir
     writer.dataset = load_inference_source(str(source), batch=1)
@@ -483,7 +492,7 @@ def save_predictions(source: Path, response: dict, args: dict) -> None:
         directory.joinpath("results.json").write_text(json.dumps(response, indent=2))
     try:
         for (paths, images, descriptions), prediction in zip(writer.dataset, response["images"], strict=True):
-            result = prediction_result(images[0], paths[0], prediction, response["metadata"], writer.args)
+            result = prediction_result(images[0], paths[0], prediction, names, task, writer.args)
             writer.results = [result]
             writer.write_results(0, Path(paths[0]), np.moveaxis(images[0], -1, 0), descriptions)
     finally:
@@ -562,7 +571,7 @@ def dispatch(tokens: list[str]) -> int:
     """Execute one SDK operation, inferring only a missing resource-path owner."""
     tokens = list(tokens)
     with ExitStack() as stack:
-        client = stack.enter_context(Platform(base_url=PLATFORM_URL))
+        client = stack.enter_context(Platform(base_url=platform_url()))
         if tokens and tokens[0] in CLOUD_COMMANDS:
             if len(tokens) == 1 or any(token in {"help", "--help", "-h"} for token in tokens):
                 print(inspect.getdoc(CLOUD_COMMANDS[tokens[0]]))
