@@ -558,12 +558,15 @@ def cloud_export(client: Platform, tokens: list[str]) -> int:
     print(f"Export: {job['id']} ({job['status']})")
     job = wait_job(lambda: client.exports.retrieve(owner, project, model, job["id"])["export"])
     output(job)
+    file = job.get("file") or {}
+    if not file.get("downloadUrl") or not file.get("downloadFilename"):
+        raise ValueError("Export completed without a download URL or filename")
     directory = Path(
         local_args.get("save_dir")
         or local_args.get("project")
         or (Path(str(local_args.get("model"))).parent if not platform_model(local_args.get("model")) else ".")
     )
-    download_file(job["file"]["downloadUrl"], directory.expanduser() / Path(job["file"]["downloadFilename"]).name)
+    download_file(file["downloadUrl"], directory.expanduser() / Path(file["downloadFilename"]).name)
     return 0
 
 
