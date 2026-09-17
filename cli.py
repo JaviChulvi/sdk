@@ -563,7 +563,7 @@ def cloud_export(client: Platform, tokens: list[str]) -> int:
         or local_args.get("project")
         or (Path(str(local_args.get("model"))).parent if not platform_model(local_args.get("model")) else ".")
     )
-    download_file(job["file"]["downloadUrl"], directory.expanduser() / job["file"]["downloadFilename"])
+    download_file(job["file"]["downloadUrl"], directory.expanduser() / Path(job["file"]["downloadFilename"]).name)
     return 0
 
 
