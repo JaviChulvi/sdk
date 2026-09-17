@@ -514,15 +514,10 @@ def cloud_predict(client: Platform, tokens: list[str]) -> int:
     Saves annotated output, with optional save_txt/save_crop/save_frames.
     project=, name=, save_dir=, and exist_ok= control local outputs as in YOLO.
     """
-    from ultralytics.cfg import DEFAULT_CFG_DICT
-
     args = yolo_args(tokens)
     source = Path(str(args.pop("source", ""))).expanduser()
     if not source.is_file():
         raise ValueError("source= must be a local image or video file")
-    unsupported = {"agnostic_nms", "augment", "embed", "vid_stride", "visualize"}  # the endpoint cannot honor these
-    if changed := {key for key in unsupported & set(args) if args[key] != DEFAULT_CFG_DICT[key]}:
-        raise ValueError(f"Platform predict does not support: {', '.join(sorted(changed))}")
     model, project = args.pop("model", "yolo26n.pt"), args.pop("project", None)
     local_args = args | {"model": model, "project": project}
     uri = platform_model(model) or upload_model(client, model, *resolve_project(client, project))
