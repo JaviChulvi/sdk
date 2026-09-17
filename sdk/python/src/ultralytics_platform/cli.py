@@ -189,6 +189,7 @@ def yolo_args(tokens: list[str]) -> dict:
     """Type key=value arguments the way `yolo` does; Alpha validates their values."""
     from ultralytics.cfg import DEFAULT_CFG_DICT, smart_value
     from ultralytics.utils import YAML
+    from ultralytics.utils.checks import check_model_file_from_stem
 
     raw = assignments(tokens)
     args = YAML.load(Path(raw.pop("cfg")).expanduser()) if raw.get("cfg") else {}
@@ -198,6 +199,8 @@ def yolo_args(tokens: list[str]) -> dict:
     for key in ("project", "name", "save_dir"):
         if args.get(key) is not None:
             args[key] = str(args[key])
+    if args.get("model") is not None:
+        args["model"] = str(check_model_file_from_stem(str(args["model"])))  # yolo26n -> yolo26n.pt, as YOLO does
     return args
 
 
@@ -237,12 +240,14 @@ def upload_file(client: Platform, path: Path, asset_type: str, asset_id: str) ->
 
 
 def platform_model(model: Any) -> str | None:
-    """Return the ul:// URI of a Platform model or hosted official weights; None means other weights or a local path."""
+    """Return the ul:// URI of a Platform model or hosted official weights; None means a checkpoint to upload."""
     from ultralytics.utils.downloads import GITHUB_ASSETS_NAMES
 
     model = str(model)
     if model.startswith("ul://"):
         return model
+    if Path(model).is_file():  # a local file wins over same-named official weights, as in local YOLO
+        return None
     if model in GITHUB_ASSETS_NAMES and (family := next((f for f in OFFICIAL_FAMILIES if model.startswith(f)), None)):
         return f"ul://ultralytics/{family}/{Path(model).stem}"
     return None
@@ -266,8 +271,8 @@ def upload_model(client: Platform, model: Any, owner: str, project: str) -> str:
     return uri
 
 
-def package_dataset(dataset: Path, destination: str, task: str | None) -> tuple[Path, str]:
-    """Zip the declared splits of a local dataset with their labels, masks, or depth maps, and return its task.
+def package_dataset(dataset: Path, destination: str, task: str | None) -> Path:
+    """Zip the declared splits of a local dataset with their labels, masks, or depth maps.
 
     Existing archives pass through. A directory without a YAML is a classification dataset of class folders.
     """
@@ -277,7 +282,7 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> tuple[
     source = dataset.resolve()
     task = task or ("classify" if source.is_dir() and not any(source.rglob("*.yaml")) else "detect")
     if source.is_file() and (zipfile.is_zipfile(source) or is_tarfile(source)):
-        return source, task
+        return source
     yaml_file, declared = None, {}
     if task == "classify":
         root, directories = source, [source / split for split in ("train", "val", "test")]
@@ -307,7 +312,7 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> tuple[
                 and file.suffix[1:].lower() in IMG_FORMATS | {"txt", "npy"}
             ):
                 output.write(file, file.relative_to(root))
-    return archive, task
+    return archive
 
 
 def wait_job(fetch) -> dict:
@@ -370,18 +375,16 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
     if not local_data.exists():  # ul:// URIs and built-in names such as coco8.yaml are resolved by Platform
         local_data = None
     with TemporaryDirectory(prefix="ul-cloud-train-") as temporary:
-        archive, task = package_dataset(local_data, temporary, args.get("task")) if local_data else (None, None)
+        archive = package_dataset(local_data, temporary, args.get("task")) if local_data else None
         owner, project_slug = resolve_project(client, project)
-        hosted = platform_model(args["model"])  # unhosted official weights stay bare; the worker downloads them
-        if hosted or args["model"] not in GITHUB_ASSETS_NAMES:
-            args["model"] = hosted or upload_model(client, args["model"], owner, project_slug)
+        model = args["model"]
+        if Path(model).is_file() or not (model.startswith("ul://") or model in GITHUB_ASSETS_NAMES):
+            args["model"] = upload_model(client, model, owner, project_slug)
+        else:  # hosted official weights map to their public model; other official names stay bare for the worker
+            args["model"] = platform_model(model) or model
         if archive:
-            dataset = client.datasets.create(
-                owner=owner,
-                dataset=slugify(archive.stem) or "dataset",
-                name=archive.stem,
-                task=task,
-                visibility="private",
+            dataset = client.datasets.create(  # Platform infers the task from the labels during ingest
+                owner=owner, dataset=slugify(archive.stem) or "dataset", name=archive.stem, visibility="private"
             )
             args["data"] = f"ul://{dataset['owner']}/datasets/{dataset['dataset']}"
             print(f"Dataset: {args['data']} (reuse this URI to skip uploading next time)")
