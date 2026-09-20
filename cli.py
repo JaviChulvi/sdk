@@ -196,10 +196,10 @@ def yolo_args(tokens: list[str]) -> dict:
     args.update({key: True if value is None else smart_value(value) for key, value in raw.items()})
     if unknown := set(args) - set(DEFAULT_CFG_DICT) - {"gpu_type", "save_dir"}:
         raise ValueError(f"Unknown YOLO arguments: {', '.join(sorted(unknown))}")
-    for key in ("project", "name", "save_dir"):
-        if args.get(key) is not None:
-            args[key] = str(args[key])
-    if args.get("model") is not None and not str(args["model"]).startswith("ul://"):  # URIs may end in a stem
+    args = {key: value for key, value in args.items() if value is not None}  # null means unset, as in default.yaml
+    for key in args.keys() & {"project", "name", "save_dir"}:
+        args[key] = str(args[key])
+    if "model" in args and not str(args["model"]).startswith("ul://"):  # URIs may end in a stem
         args["model"] = str(check_model_file_from_stem(str(args["model"])))  # yolo26n -> yolo26n.pt, as YOLO does
     return args
 
