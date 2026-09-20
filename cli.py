@@ -239,7 +239,7 @@ def upload_file(client: Platform, path: Path, asset_type: str, asset_id: str) ->
     return signed["sessionId"]
 
 
-def platform_model(model: Any) -> str | None:
+def platform_model(client: Platform, model: Any) -> str | None:
     """Return the ul:// URI of a Platform model or hosted official weights; None means a checkpoint to upload."""
     from ultralytics.utils.downloads import GITHUB_ASSETS_NAMES
 
@@ -249,7 +249,12 @@ def platform_model(model: Any) -> str | None:
     if Path(model).is_file():  # a local file wins over same-named official weights, as in local YOLO
         return None
     if model in GITHUB_ASSETS_NAMES and (family := next((f for f in OFFICIAL_FAMILIES if model.startswith(f)), None)):
-        return f"ul://ultralytics/{family}/{Path(model).stem}"
+        try:  # Platform hosts only part of each family, e.g. not the -world or -oiv7 weights
+            client.models.retrieve("ultralytics", family, Path(model).stem)
+            return f"ul://ultralytics/{family}/{Path(model).stem}"
+        except APIError as error:
+            if error.status_code != 404:
+                raise
     return None
 
 
@@ -261,7 +266,7 @@ def upload_model(client: Platform, model: Any, owner: str, project: str) -> str:
     path = Path(str(model)).expanduser()
     if not path.is_file() or path.suffix != ".pt":
         raise ValueError(
-            f"model= must be a local .pt file, ul://owner/project/model, or {'/'.join(OFFICIAL_FAMILIES)} weights: {model}"
+            f"model= must be a local .pt file, ul://owner/project/model, or official weights hosted on Platform: {model}"
         )
     body = {"owner": owner, "project": project, "model": slugify(path.stem), "name": path.stem, "task": YOLO(path).task}
     created = client.models.create(body=body)
@@ -388,7 +393,7 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
         if Path(model).is_file() or not (model.startswith("ul://") or model in GITHUB_ASSETS_NAMES):
             args["model"] = upload_model(client, model, owner, project_slug)
         else:  # hosted official weights map to their public model; other official names stay bare for the worker
-            args["model"] = platform_model(model) or model
+            args["model"] = platform_model(client, model) or model
         if archive:
             dataset = client.datasets.create(  # Platform infers the task from the labels during ingest
                 owner=owner, dataset=slugify(archive.stem) or "dataset", name=archive.stem, visibility="private"
@@ -533,7 +538,7 @@ def cloud_predict(client: Platform, tokens: list[str]) -> int:
         raise ValueError("source= must be a local image or video file")
     model, project = args.pop("model", "yolo26n.pt"), args.pop("project", None)
     local_args = args | {"model": model, "project": project}
-    uri = platform_model(model) or upload_model(client, model, *resolve_project(client, project))
+    uri = platform_model(client, model) or upload_model(client, model, *resolve_project(client, project))
     owner, project, model = uri[5:].split("/")
     options = {key: args[key] for key in ("conf", "iou", "imgsz") if key in args}  # YOLO options the endpoint accepts
     with source.open("rb") as file:
@@ -552,7 +557,8 @@ def cloud_export(client: Platform, tokens: list[str]) -> int:
     args = yolo_args(tokens)
     local_args = args.copy()
     model, project = args.pop("model", "yolo26n.pt"), args.pop("project", None)
-    uri = platform_model(model) or upload_model(client, model, *resolve_project(client, project))
+    hosted = platform_model(client, model)
+    uri = hosted or upload_model(client, model, *resolve_project(client, project))
     if uri.startswith("ul://ultralytics/"):  # exports require your own copy of official weights
         owner, slug = resolve_project(client, project)
         clone = client.models.clone(*uri[5:].split("/"), owner_body=owner, project_body=slug)
@@ -575,7 +581,7 @@ def cloud_export(client: Platform, tokens: list[str]) -> int:
     directory = Path(
         local_args.get("save_dir")
         or local_args.get("project")
-        or (Path(str(local_args.get("model"))).parent if not platform_model(local_args.get("model")) else ".")
+        or (Path(str(local_args.get("model"))).parent if not hosted else ".")
     )
     download_file(file["downloadUrl"], directory.expanduser() / Path(file["downloadFilename"]).name)
     return 0
