@@ -304,6 +304,10 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> Path:
         listed = {key: declared[key] for key in ("train", "val", "test") if declared.get(key)}
         items = [value for item in listed.values() for value in (item if isinstance(item, list) else [item])]
         splits = [Path(os.path.abspath(root / value)) for value in items]
+        splits = [  # an absent '../' value resolves back under root, as check_det_dataset does for Roboflow exports
+            s if s.exists() or not v.startswith("../") else Path(os.path.abspath(root / v[3:]))
+            for v, s in zip(items, splits)
+        ]
         if not all(split.is_dir() and split.is_relative_to(root) for split in splits):
             raise ValueError("Cloud uploads require split directories under the dataset root, not image lists")
         # archive members are relative to root, so absolute or ../ split values are rewritten to match
