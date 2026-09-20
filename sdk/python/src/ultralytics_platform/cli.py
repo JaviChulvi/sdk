@@ -199,7 +199,7 @@ def yolo_args(tokens: list[str]) -> dict:
     for key in ("project", "name", "save_dir"):
         if args.get(key) is not None:
             args[key] = str(args[key])
-    if args.get("model") is not None:
+    if args.get("model") is not None and not str(args["model"]).startswith("ul://"):  # URIs may end in a stem
         args["model"] = str(check_model_file_from_stem(str(args["model"])))  # yolo26n -> yolo26n.pt, as YOLO does
     return args
 
