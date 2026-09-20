@@ -293,13 +293,20 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> Path:
         if yaml_file.suffix.lower() not in {".yaml", ".yml"}:
             raise ValueError("Local data must be a dataset YAML, directory, ZIP, or TAR archive")
         data = check_det_dataset(str(yaml_file), autodownload=False)
-        root, declared = Path(data["path"]), YAML.load(yaml_file)  # declared paths keep symlinked splits under root
+        # declared paths keep symlinked splits under root; abspath also anchors a relative path: key
+        root, declared = Path(os.path.abspath(data["path"])), YAML.load(yaml_file)
+        declared.setdefault("val", declared.pop("validation", None))  # the alias check_det_dataset renames
         values = [declared[split] for split in ("train", "val", "test") if declared.get(split)]
-        splits = [root / value for item in values for value in (item if isinstance(item, list) else [item])]
-        if not all(split.is_dir() and Path(os.path.abspath(split)).is_relative_to(root) for split in splits):
+        items = [value for item in values for value in (item if isinstance(item, list) else [item])]
+        splits = [Path(os.path.abspath(root / value)) for value in items]
+        if not all(split.is_dir() and split.is_relative_to(root) for split in splits):
             raise ValueError("Cloud uploads require split directories under the dataset root, not image lists")
         siblings = ("labels", data.get("masks_dir") or "masks", "depth")  # YOLO mirrors images/ per split
-        directories = splits + [Path(*(n if p == "images" else p for p in s.parts)) for s in splits for n in siblings]
+        directories = splits + [  # only below root, so an images/ component of the root itself is kept
+            root.joinpath(*(n if p == "images" else p for p in s.relative_to(root).parts))
+            for s in splits
+            for n in siblings
+        ]
     archive = Path(destination) / f"{root.name}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
         if yaml_file:  # splits are relative to the archive root; a local path: key would point outside it
@@ -365,7 +372,7 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
         raise ValueError("data= is required: use a Platform dataset URI or local dataset")
     args.setdefault("model", TASK2MODEL.get(args.get("task"), "yolo26n.pt"))
     args.setdefault("epochs", DEFAULT_CFG_DICT["epochs"])
-    local_args = args.copy()
+    cfg = get_cfg(DEFAULT_CFG_DICT | args | {"mode": "train"})  # validate local-only arguments before the paid job
     gpu_type, project, name = args.pop("gpu_type", NOT_GIVEN), args.pop("project", None), args.pop("name", None)
     for key in ("device", "exist_ok", "save_dir"):  # local-only arguments; the worker assigns its own GPU
         args.pop(key, None)
@@ -407,9 +414,8 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
         model_path = (target["owner"], target["project"], target["model"])
         job = wait_job(lambda: client.models.training(*model_path)["job"])
         model = client.models.retrieve(*model_path)["model"]
-        directory = get_save_dir(
-            get_cfg(DEFAULT_CFG_DICT | local_args | {"mode": "train", "task": model.get("task") or "detect"})
-        )
+        cfg.task = model.get("task") or "detect"
+        directory = get_save_dir(cfg)
         files = client.models.files(*model_path)["files"]
         if not files:
             raise ValueError("Training completed without a downloadable checkpoint")
@@ -454,7 +460,14 @@ def prediction_result(image, path: str, prediction: dict, names: dict, task: str
         values["obb" if task == "obb" else "boxes"] = np.concatenate((boxes, scores), axis=1)
         if rows and "segments" in rows[0]:
             polygons = [np.array(list(zip(r["segments"]["x"], r["segments"]["y"]))).ravel() for r in rows]
-            values["masks"] = polygons2masks(image.shape[:2], polygons, color=1)
+            values["masks"] = np.stack(  # a detection without a mask contour has no polygon to fill
+                [
+                    polygons2masks(image.shape[:2], [polygon], color=1)[0]
+                    if polygon.size
+                    else np.zeros(image.shape[:2], np.uint8)
+                    for polygon in polygons
+                ]
+            )
         if rows and "keypoints" in rows[0]:
             values["keypoints"] = np.array(
                 [
