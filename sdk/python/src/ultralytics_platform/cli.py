@@ -597,6 +597,8 @@ def dispatch(tokens: list[str]) -> int:
                 return CLOUD_COMMANDS[tokens[0]](client, tokens[1:])
             except (AssertionError, SyntaxError, TypeError) as error:  # ultralytics reports invalid inputs this way
                 raise ValueError(error) from error
+            except ImportError as error:  # the installed ultralytics predates the helpers these workflows reuse
+                raise ValueError(f"{error}. Update it: pip install -U ultralytics") from error
         resources = {
             name.replace("_", "-"): {
                 method.replace("_", "-"): member
