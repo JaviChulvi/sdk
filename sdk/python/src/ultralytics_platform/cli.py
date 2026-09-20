@@ -234,7 +234,7 @@ def upload_file(client: Platform, path: Path, asset_type: str, asset_id: str) ->
         }
     )
     if not safe_upload(path, signed["uploadUrl"], headers=signed.get("headers"), progress=True):
-        raise APIConnectionError(f"Upload failed: {path.name}")
+        raise OSError(f"Upload failed: {path.name}")  # reported with its message, like failed downloads
     client.upload.complete(session_id=signed["sessionId"])
     return signed["sessionId"]
 
@@ -301,11 +301,14 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> Path:
         # declared paths keep symlinked splits under root; abspath also anchors a relative path: key
         root, declared = Path(os.path.abspath(data["path"])), YAML.load(yaml_file)
         declared.setdefault("val", declared.pop("validation", None))  # the alias check_det_dataset renames
-        values = [declared[split] for split in ("train", "val", "test") if declared.get(split)]
-        items = [value for item in values for value in (item if isinstance(item, list) else [item])]
+        listed = {key: declared[key] for key in ("train", "val", "test") if declared.get(key)}
+        items = [value for item in listed.values() for value in (item if isinstance(item, list) else [item])]
         splits = [Path(os.path.abspath(root / value)) for value in items]
         if not all(split.is_dir() and split.is_relative_to(root) for split in splits):
             raise ValueError("Cloud uploads require split directories under the dataset root, not image lists")
+        # archive members are relative to root, so absolute or ../ split values are rewritten to match
+        relative = {value: split.relative_to(root).as_posix() for value, split in zip(items, splits)}
+        declared |= {k: [relative[v] for v in i] if isinstance(i, list) else relative[i] for k, i in listed.items()}
         siblings = ("labels", data.get("masks_dir") or "masks", "depth")  # YOLO mirrors images/ per split
         directories = splits + [  # only below root, so an images/ component of the root itself is kept
             root.joinpath(*(n if p == "images" else p for p in s.relative_to(root).parts))
@@ -403,10 +406,10 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
             session = upload_file(client, archive, "datasets", dataset["id"])
             client.datasets.ingest(dataset["owner"], dataset["dataset"], body={"sessionId": session})
             state = {"status": "processing"}
-            while state["status"] == "processing":
+            while state.get("status") == "processing":
                 time.sleep(2)
                 state = client.datasets.retrieve(dataset["owner"], dataset["dataset"])["dataset"]
-            if state["status"] == "failed":
+            if state.get("status") == "failed":
                 raise ValueError(f"Dataset ingestion failed; inspect {args['data']}: {state.get('processingError')}")
         body = {"owner": owner, "project": project_slug}
         if name:
