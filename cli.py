@@ -666,14 +666,12 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     try:
         if not args or args in (["help"], ["--help"], ["-h"]):
+            workflows = f"ul cloud {'|'.join(CLOUD_COMMANDS)} key=value ...\n" if CLOUD_COMMANDS else ""
             print(
                 "ul login API_KEY | logout | version\n"
                 "ul train|val|predict|export|track|benchmark key=value ...\n"
-                "ul settings|checks|cfg|copy-cfg|solutions ..."
-            )
-            if CLOUD_COMMANDS:
-                print(f"ul cloud {'|'.join(CLOUD_COMMANDS)} key=value ...")
-            print(
+                "ul settings|checks|cfg|copy-cfg|solutions ...\n"
+                f"{workflows}"
                 "ul cloud <resource> [operation] key=value ...\n"
                 "Login/logout and local commands require ultralytics. Use ul cloud --help to list API commands.\n"
                 "Omitted path owners default to the logged-in username. No --key value options."
