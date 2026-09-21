@@ -70,7 +70,7 @@ asyncio.run(main())
 
 The package includes typed responses, multipart uploads, retries for temporary failures, structured API errors, custom HTTP clients, and context-manager cleanup. It requires Python 3.11 or newer.
 
-Use `ul cloud train model=yolo26n.pt data=ul://you/datasets/animals` to prepare and submit training with YOLO arguments. Local `.pt` weights and dataset paths are uploaded automatically. This convenience command requires `ultralytics` in the same environment; see the [CLI documentation](README.python.md#unified-ul-cli).
+Use `ul cloud train model=yolo26n.pt data=ul://you/datasets/animals` to prepare and submit training with YOLO arguments. Local `.pt` weights and dataset paths are uploaded automatically; the command prints the run and its `ul cloud download` command, or add `watch` to follow training and download the results. This convenience command requires `ultralytics` in the same environment; see the [CLI documentation](README.python.md#unified-ul-cli).
 
 ## 🧩 One Contract, Multiple Outputs
 

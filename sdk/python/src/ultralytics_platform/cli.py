@@ -194,7 +194,7 @@ def yolo_args(tokens: list[str]) -> dict:
     raw = assignments(tokens)
     args = YAML.load(Path(raw.pop("cfg")).expanduser()) if raw.get("cfg") else {}
     args.update({key: True if value is None else smart_value(value) for key, value in raw.items()})
-    if unknown := set(args) - set(DEFAULT_CFG_DICT) - {"gpu_type", "save_dir"}:
+    if unknown := set(args) - set(DEFAULT_CFG_DICT) - {"gpu_type", "save_dir", "watch"}:
         raise ValueError(f"Unknown YOLO arguments: {', '.join(sorted(unknown))}")
     args = {key: value for key, value in args.items() if value is not None}  # null means unset, as in default.yaml
     for key in args.keys() & {"project", "name", "save_dir"}:
@@ -335,18 +335,36 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> Path:
 
 
 def wait_job(fetch) -> dict:
-    """Wait for a submitted cloud job and fail if it does not complete successfully."""
-    last = None
-    while True:
-        job = fetch()
-        if job is None:
-            raise ValueError("Cloud job is no longer available")
-        if job["status"] not in {"pending", "untrained", "queued", "starting", "running"}:
-            break
-        if (line := f"{job['status']}: {job.get('progress', '')}") != last:
-            print(line, flush=True)
-            last = line
-        time.sleep(5)
+    """Poll a submitted cloud job until it stops, drawing epoch progress when the job reports it."""
+    from ultralytics.utils.tqdm import TQDM
+
+    active = {"pending", "untrained", "queued", "starting", "running"}
+    bar = last = None
+    try:
+        while True:
+            job = fetch()
+            if job is None:
+                raise ValueError("Cloud job is no longer available")
+            progress = job.get("progress")
+            if progress and (bar or job["status"] in active):  # epoch bar while the job runs, drawn at 0 right away
+                bar = bar or TQDM(
+                    total=progress["totalEpochs"],
+                    initial=progress["currentEpoch"],
+                    desc="Training",
+                    unit="epoch",
+                    mininterval=0,  # the default interval would hide the empty bar until the first epoch finishes
+                )
+                if progress["currentEpoch"] > bar.n:  # update only on epoch changes so the rate stays accurate
+                    bar.update(progress["currentEpoch"] - bar.n)
+            elif job["status"] in active and job["status"] != last:  # terminal statuses speak through what follows
+                print(f"{job['status'].capitalize()}...", flush=True)
+                last = job["status"]
+            if job["status"] not in active:
+                break
+            time.sleep(5)
+    finally:
+        if bar:
+            bar.close()  # also on Ctrl-C, so the interruption message starts on its own line
     if job["status"] != "completed":
         raise ValueError(f"Cloud job {job['status']}: {(job.get('error') or {}).get('message', '')}")
     return job
@@ -364,18 +382,44 @@ def download_file(url: str, target: Path) -> Path:
     return target
 
 
-def cloud_train(client: Platform, tokens: list[str]) -> int:
-    """ul cloud train model=yolo26n.pt data=ul://owner/datasets/slug epochs=100 [gpu_type=rtx-4090]
-
-    Local .pt weights and dataset YAMLs, directories, ZIPs, or TARs are uploaded automatically.
-    project= selects the output project; default: private cloud-training.
-    Waits for completion and saves weights/best.pt, args.yaml, results.csv, and job details locally.
-    """
+def download_model(client: Platform, uri: str, cfg) -> int:
+    """Wait for a model's training and save its checkpoint, arguments, and results under YOLO's save directory."""
     import csv
 
     from ultralytics import YOLO
-    from ultralytics.cfg import DEFAULT_CFG_DICT, TASK2MODEL, get_cfg, get_save_dir
+    from ultralytics.cfg import get_save_dir
     from ultralytics.utils import YAML
+
+    model_path = uri[5:].split("/")
+    try:
+        job = wait_job(lambda: client.models.training(*model_path)["job"])
+    except KeyboardInterrupt:
+        print(f"Interrupted; training continues. Download later: ul cloud download model={uri}", file=sys.stderr)
+        return 130
+    cfg.task = client.models.retrieve(*model_path)["model"].get("task") or "detect"
+    directory = get_save_dir(cfg)
+    files = client.models.files(*model_path)["files"]
+    if not files:
+        raise ValueError("Training completed without a downloadable checkpoint")
+    checkpoint = YOLO(download_file(files[0]["downloadUrl"], directory / "weights" / "best.pt")).ckpt
+    YAML.save(directory / "args.yaml", checkpoint["train_args"])
+    if results := checkpoint.get("train_results"):
+        with directory.joinpath("results.csv").open("w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(results)
+            writer.writerows(zip(*results.values()))
+    directory.joinpath("results.json").write_text(json.dumps(job, indent=2))
+    return 0
+
+
+def cloud_train(client: Platform, tokens: list[str]) -> int:
+    """ul cloud train model=yolo26n.pt data=ul://owner/datasets/slug epochs=100 [gpu_type=rtx-4090] [watch]
+
+    Local .pt weights and dataset YAMLs, directories, ZIPs, or TARs are uploaded automatically.
+    project= selects the output project; default: private cloud-training.
+    Prints the run and its `ul cloud download` command; `watch` follows training and downloads the results instead.
+    """
+    from ultralytics.cfg import DEFAULT_CFG_DICT, TASK2MODEL, get_cfg
     from ultralytics.utils.callbacks.platform import slugify
     from ultralytics.utils.downloads import GITHUB_ASSETS_NAMES
 
@@ -386,6 +430,7 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
     args.setdefault("epochs", DEFAULT_CFG_DICT["epochs"])
     cfg = get_cfg(DEFAULT_CFG_DICT | args | {"mode": "train"})  # validate local-only arguments before the paid job
     gpu_type, project, name = args.pop("gpu_type", NOT_GIVEN), args.pop("project", None), args.pop("name", None)
+    watch = args.pop("watch", False)
     for key in ("device", "exist_ok", "save_dir"):  # local-only arguments; the worker assigns its own GPU
         args.pop(key, None)
     if "cache" in args and not isinstance(args["cache"], str):
@@ -419,28 +464,18 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
         if name:
             body |= {"model": slugify(name), "name": name}
         target = client.models.create(body=body)
+        started = client.training.start(model_id=target["id"], train_args=args, gpu_type=gpu_type)
+        uri = f"ul://{target['owner']}/{target['project']}/{target['model']}"
+        print(f"Model: {uri}")
         print(
-            f"Run: {platform_url()}/{target['owner']}/{target['project']}/{target['model']} (model_id={target['id']})"
+            f"GPU: {started['gpuType']} at ${started['estimatedCost']['pricePerHour']}/h, "
+            f"estimated {started['billing']['estimatedCostDisplay']}"
         )
-        output(client.training.start(model_id=target["id"], train_args=args, gpu_type=gpu_type))
-        model_path = (target["owner"], target["project"], target["model"])
-        job = wait_job(lambda: client.models.training(*model_path)["job"])
-        model = client.models.retrieve(*model_path)["model"]
-        cfg.task = model.get("task") or "detect"
-        directory = get_save_dir(cfg)
-        files = client.models.files(*model_path)["files"]
-        if not files:
-            raise ValueError("Training completed without a downloadable checkpoint")
-        checkpoint = YOLO(download_file(files[0]["downloadUrl"], directory / "weights" / "best.pt")).ckpt
-        YAML.save(directory / "args.yaml", checkpoint["train_args"])
-        if results := checkpoint.get("train_results"):
-            with directory.joinpath("results.csv").open("w", newline="") as file:
-                writer = csv.writer(file)
-                writer.writerow(results)
-                writer.writerows(zip(*results.values()))
-        directory.joinpath("results.json").write_text(json.dumps(job, indent=2))
-        output(job)
-    return 0
+        print(f"Run: {platform_url()}/{uri[5:]}")
+        if not watch:
+            print(f"Download: ul cloud download model={uri}")
+            return 0
+        return download_model(client, uri, cfg)
 
 
 def prediction_result(image, path: str, prediction: dict, names: dict, task: str, args):
@@ -594,7 +629,22 @@ def cloud_export(client: Platform, tokens: list[str]) -> int:
     return 0
 
 
-CLOUD_COMMANDS = {"train": cloud_train, "predict": cloud_predict, "export": cloud_export}
+def cloud_download(client: Platform, tokens: list[str]) -> int:
+    """ul cloud download model=ul://owner/project/model [project=runs/detect name=train exist_ok=True]
+
+    Waits for training to finish, then saves weights/best.pt, args.yaml, results.csv, and results.json under YOLO's
+    save directory, exactly as `ul cloud train ... watch` does.
+    """
+    from ultralytics.cfg import DEFAULT_CFG_DICT, get_cfg
+
+    args = yolo_args(tokens)
+    uri = str(args.get("model", ""))
+    if not uri.startswith("ul://") or len(uri[5:].split("/")) != 3:
+        raise ValueError("model= must be a ul://owner/project/model URI")
+    return download_model(client, uri, get_cfg(DEFAULT_CFG_DICT | args | {"mode": "train"}))
+
+
+CLOUD_COMMANDS = {"train": cloud_train, "predict": cloud_predict, "export": cloud_export, "download": cloud_download}
 
 
 def dispatch(tokens: list[str]) -> int:
