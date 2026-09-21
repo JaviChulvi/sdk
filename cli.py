@@ -635,7 +635,8 @@ def dispatch(tokens: list[str]) -> int:
         if method is None and tokens and not help_requested:
             raise ValueError("Choose a resource operation before supplying arguments")
         if method is None or help_requested:
-            print("ul cloud train|predict|export key=value ... — YOLO workflows on Platform")
+            if CLOUD_COMMANDS:
+                print(f"ul cloud {'|'.join(CLOUD_COMMANDS)} key=value ... — YOLO workflows on Platform")
             print("<resource> [operation] key=value ... (path owner defaults to the logged-in username)")
             listing = {resource: {method: methods[method]} if method else methods} if resource else resources
             for resource_name, members in listing.items():
@@ -665,11 +666,12 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     try:
         if not args or args in (["help"], ["--help"], ["-h"]):
+            workflows = f"ul cloud {'|'.join(CLOUD_COMMANDS)} key=value ...\n" if CLOUD_COMMANDS else ""
             print(
                 "ul login API_KEY | logout | version\n"
                 "ul train|val|predict|export|track|benchmark key=value ...\n"
                 "ul settings|checks|cfg|copy-cfg|solutions ...\n"
-                "ul cloud train|predict|export key=value ...\n"
+                f"{workflows}"
                 "ul cloud <resource> [operation] key=value ...\n"
                 "Login/logout and local commands require ultralytics. Use ul cloud --help to list API commands.\n"
                 "Omitted path owners default to the logged-in username. No --key value options."
