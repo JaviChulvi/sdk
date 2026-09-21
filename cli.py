@@ -185,8 +185,8 @@ def defaults(methods: dict[str, Any]) -> dict[str, list[str]]:
     return result
 
 
-def yolo_args(tokens: list[str]) -> dict:
-    """Type key=value arguments the way `yolo` does; Alpha validates their values."""
+def yolo_args(tokens: list[str], *extra: str) -> dict:
+    """Type key=value arguments the way `yolo` does, accepting `extra` workflow keys; Alpha validates their values."""
     from ultralytics.cfg import DEFAULT_CFG_DICT, smart_value
     from ultralytics.utils import YAML
     from ultralytics.utils.checks import check_model_file_from_stem
@@ -194,7 +194,7 @@ def yolo_args(tokens: list[str]) -> dict:
     raw = assignments(tokens)
     args = YAML.load(Path(raw.pop("cfg")).expanduser()) if raw.get("cfg") else {}
     args.update({key: True if value is None else smart_value(value) for key, value in raw.items()})
-    if unknown := set(args) - set(DEFAULT_CFG_DICT) - {"gpu_type", "save_dir", "watch"}:
+    if unknown := set(args) - set(DEFAULT_CFG_DICT) - {"gpu_type", "save_dir", *extra}:
         raise ValueError(f"Unknown YOLO arguments: {', '.join(sorted(unknown))}")
     args = {key: value for key, value in args.items() if value is not None}  # null means unset, as in default.yaml
     for key in args.keys() & {"project", "name", "save_dir"}:
@@ -423,7 +423,7 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
     from ultralytics.utils.callbacks.platform import slugify
     from ultralytics.utils.downloads import GITHUB_ASSETS_NAMES
 
-    args = yolo_args(tokens)
+    args = yolo_args(tokens, "watch")
     if not isinstance(args.get("data"), str) or not args["data"]:
         raise ValueError("data= is required: use a Platform dataset URI or local dataset")
     args.setdefault("model", TASK2MODEL.get(args.get("task"), "yolo26n.pt"))
