@@ -336,9 +336,10 @@ def package_dataset(dataset: Path, destination: str, task: str | None) -> Path:
 
 def wait_job(fetch) -> dict:
     """Poll a submitted cloud job until it stops, drawing epoch progress when the job reports it."""
-    from ultralytics.utils.tqdm import TQDM
+    from ultralytics.utils.tqdm import TQDM, is_noninteractive_console
 
     active = {"pending", "untrained", "queued", "starting", "running"}
+    plain = is_noninteractive_console()  # CI consoles get one line per epoch; a bar there would print only on close
     bar = last = None
     try:
         while True:
@@ -347,17 +348,23 @@ def wait_job(fetch) -> dict:
                 raise ValueError("Cloud job is no longer available")
             progress = job.get("progress") or {}
             if progress.get("totalEpochs") and (bar or job["status"] in active):  # epoch bar, drawn at 0 right away
-                bar = bar or TQDM(
-                    total=progress["totalEpochs"],
-                    initial=progress["currentEpoch"],
-                    desc="Training",
-                    unit="epoch",
-                    mininterval=0,  # the default interval would hide the empty bar until the first epoch finishes
-                )
-                if progress["currentEpoch"] > bar.n:  # update only on epoch changes so the rate stays accurate
-                    bar.update(progress["currentEpoch"] - bar.n)
-                    if bar.noninteractive:  # CI consoles get one line per epoch; the bar itself prints only on close
-                        print(f"Epoch {bar.n}/{bar.total}", flush=True)
+                epoch = progress["currentEpoch"]
+                if bar is None:
+                    seen = epoch
+                    bar = TQDM(
+                        total=progress["totalEpochs"],
+                        initial=epoch,
+                        desc="Training",
+                        unit="epoch",
+                        mininterval=0,  # the default interval would hide the empty bar until the first epoch finishes
+                        disable=plain or None,
+                    )
+                if epoch > seen:  # update only on epoch changes so the rate stays accurate
+                    bar.update(epoch - seen)
+                    seen = epoch
+                if plain and epoch != last:  # the disabled bar prints nothing: report each epoch, the first included
+                    print(f"Epoch {epoch}/{progress['totalEpochs']}", flush=True)
+                    last = epoch
             elif job["status"] in active and job["status"] != last:  # terminal statuses speak through what follows
                 print(f"{job['status'].capitalize()}...", flush=True)
                 last = job["status"]
