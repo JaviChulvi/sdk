@@ -345,8 +345,8 @@ def wait_job(fetch) -> dict:
             job = fetch()
             if job is None:
                 raise ValueError("Cloud job is no longer available")
-            progress = job.get("progress")
-            if progress and (bar or job["status"] in active):  # epoch bar while the job runs, drawn at 0 right away
+            progress = job.get("progress") or {}
+            if progress.get("totalEpochs") and (bar or job["status"] in active):  # epoch bar, drawn at 0 right away
                 bar = bar or TQDM(
                     total=progress["totalEpochs"],
                     initial=progress["currentEpoch"],
@@ -356,6 +356,8 @@ def wait_job(fetch) -> dict:
                 )
                 if progress["currentEpoch"] > bar.n:  # update only on epoch changes so the rate stays accurate
                     bar.update(progress["currentEpoch"] - bar.n)
+                    if bar.noninteractive:  # CI consoles get one line per epoch; the bar itself prints only on close
+                        print(f"Epoch {bar.n}/{bar.total}", flush=True)
             elif job["status"] in active and job["status"] != last:  # terminal statuses speak through what follows
                 print(f"{job['status'].capitalize()}...", flush=True)
                 last = job["status"]
@@ -393,22 +395,22 @@ def download_model(client: Platform, uri: str, cfg) -> int:
     model_path = uri[5:].split("/")
     try:
         job = wait_job(lambda: client.models.training(*model_path)["job"])
-    except KeyboardInterrupt:
-        print(f"Interrupted; training continues. Download later: ul cloud download model={uri}", file=sys.stderr)
+        cfg.task = client.models.retrieve(*model_path)["model"].get("task") or "detect"
+        directory = get_save_dir(cfg)
+        files = client.models.files(*model_path)["files"]
+        if not files:
+            raise ValueError("Training completed without a downloadable checkpoint")
+        checkpoint = YOLO(download_file(files[0]["downloadUrl"], directory / "weights" / "best.pt")).ckpt
+        YAML.save(directory / "args.yaml", checkpoint["train_args"])
+        if results := checkpoint.get("train_results"):
+            with directory.joinpath("results.csv").open("w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(results)
+                writer.writerows(zip(*results.values()))
+        directory.joinpath("results.json").write_text(json.dumps(job, indent=2))
+    except KeyboardInterrupt:  # the remote job is unaffected; every step above can be redone with this command
+        print(f"Interrupted; run `ul cloud download model={uri}` to resume once training completes", file=sys.stderr)
         return 130
-    cfg.task = client.models.retrieve(*model_path)["model"].get("task") or "detect"
-    directory = get_save_dir(cfg)
-    files = client.models.files(*model_path)["files"]
-    if not files:
-        raise ValueError("Training completed without a downloadable checkpoint")
-    checkpoint = YOLO(download_file(files[0]["downloadUrl"], directory / "weights" / "best.pt")).ckpt
-    YAML.save(directory / "args.yaml", checkpoint["train_args"])
-    if results := checkpoint.get("train_results"):
-        with directory.joinpath("results.csv").open("w", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow(results)
-            writer.writerows(zip(*results.values()))
-    directory.joinpath("results.json").write_text(json.dumps(job, indent=2))
     return 0
 
 
@@ -468,7 +470,7 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
         uri = f"ul://{target['owner']}/{target['project']}/{target['model']}"
         print(f"Model: {uri}")
         print(
-            f"GPU: {started['gpuType']} at ${started['estimatedCost']['pricePerHour']}/h, "
+            f"GPU: {started['gpuType']} at ${started['estimatedCost']['pricePerHour']:.2f}/h, "
             f"estimated {started['billing']['estimatedCostDisplay']}"
         )
         print(f"Run: {platform_url()}/{uri[5:]}")
