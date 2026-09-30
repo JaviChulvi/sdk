@@ -561,11 +561,12 @@ def save_predictions(source: Path, response: dict, args: dict) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         directory.joinpath("results.json").write_text(json.dumps(response, indent=2))
     try:
+        # write_results() needs state that only the inference loop initializes, so call its public writers directly
         for (paths, images, _), prediction in zip(dataset, response["images"], strict=True):
             result = prediction_result(images[0], paths[0], prediction, names, task, options)
             frame = dataset.frame if dataset.mode == "video" else None
             stem = source.stem if frame is None else f"{source.stem}_{frame}"
-            if options.save or options.show:  # write_results() needs state that only the inference loop initializes
+            if options.save or options.show:
                 writer.plotted_img = result.plot(
                     line_width=options.line_width,
                     boxes=options.show_boxes,
