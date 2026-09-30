@@ -778,13 +778,16 @@ def main(argv: list[str] | None = None) -> int:
     except APIError as error:
         body = error.json
         detail = body.get("error") if isinstance(body, dict) else None
-        print(
-            f"API request failed (HTTP {error.status_code}){f': {detail}' if isinstance(detail, str) else '.'}",
-            file=sys.stderr,
-        )
+        message = f"API request failed (HTTP {error.status_code}){f': {detail}' if isinstance(detail, str) else '.'}"
+        if error.status_code == 401:
+            message += (
+                f"\nCreate an API key at {platform_url()}/settings?tab=api-keys, then run `ul login API_KEY` "
+                "or set ULTRALYTICS_API_KEY (it overrides the saved key)."
+            )
+        print(message, file=sys.stderr)
         return 1
-    except APIConnectionError:
-        print("Could not connect to API.", file=sys.stderr)
+    except APIConnectionError as error:
+        print(f"Could not connect to {platform_url()}: {error}", file=sys.stderr)
         return 1
     except (ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
