@@ -22,6 +22,7 @@ from typing import Any, BinaryIO, Literal, get_args, get_origin, get_type_hints
 
 from . import NOT_GIVEN, APIConnectionError, APIError, NotGiven, Platform
 from ._cli_metadata import MULTIPART_FILES
+from ._client import _resolve_api_key
 
 JSON_TYPES = {type(None): "null", bool: "boolean", int: "integer", float: "number", str: "string", list: "array"}
 JSON_TYPES |= {dict: "object", Sequence: "array"}
@@ -765,13 +766,18 @@ def main(argv: list[str] | None = None) -> int:
     except APIError as error:
         body = error.json
         detail = body.get("error") if isinstance(body, dict) else None
-        print(
-            f"API request failed (HTTP {error.status_code}){f': {detail}' if isinstance(detail, str) else '.'}",
-            file=sys.stderr,
-        )
+        message = f"API request failed (HTTP {error.status_code}){f': {detail}' if isinstance(detail, str) else '.'}"
+        if error.status_code == 401:
+            hint = (
+                f"API key rejected; create a new one at {platform_url()}/settings?tab=api-keys"
+                if _resolve_api_key(None)
+                else "No API key found"
+            )
+            message += f"\n{hint}. Set ULTRALYTICS_API_KEY or run `ul login API_KEY`."
+        print(message, file=sys.stderr)
         return 1
-    except APIConnectionError:
-        print("Could not connect to API.", file=sys.stderr)
+    except APIConnectionError as error:
+        print(f"Could not connect to {platform_url()}: {error}", file=sys.stderr)
         return 1
     except (ValueError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
