@@ -22,7 +22,6 @@ from typing import Any, BinaryIO, Literal, get_args, get_origin, get_type_hints
 
 from . import NOT_GIVEN, APIConnectionError, APIError, NotGiven, Platform
 from ._cli_metadata import MULTIPART_FILES
-from ._client import _resolve_api_key
 
 JSON_TYPES = {type(None): "null", bool: "boolean", int: "integer", float: "number", str: "string", list: "array"}
 JSON_TYPES |= {dict: "object", Sequence: "array"}
@@ -768,12 +767,10 @@ def main(argv: list[str] | None = None) -> int:
         detail = body.get("error") if isinstance(body, dict) else None
         message = f"API request failed (HTTP {error.status_code}){f': {detail}' if isinstance(detail, str) else '.'}"
         if error.status_code == 401:
-            hint = (
-                f"API key rejected; create a new one at {platform_url()}/settings?tab=api-keys"
-                if _resolve_api_key(None)
-                else "No API key found"
+            message += (
+                f"\nCreate an API key at {platform_url()}/settings?tab=api-keys, then run `ul login API_KEY` "
+                "or set ULTRALYTICS_API_KEY (it overrides the saved key)."
             )
-            message += f"\n{hint}. Set ULTRALYTICS_API_KEY or run `ul login API_KEY`."
         print(message, file=sys.stderr)
         return 1
     except APIConnectionError as error:
