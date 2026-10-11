@@ -433,19 +433,20 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
     Local .pt weights and dataset YAMLs, directories, ZIPs, or TARs are uploaded automatically.
     project= selects the output project; default: private cloud-training.
     Prints the run and its `ul cloud download` command; `watch` follows training and downloads the results instead.
+    capture_dataset_version saves an immutable version of the dataset for this run.
     """
     from ultralytics.cfg import DEFAULT_CFG_DICT, TASK2MODEL, get_cfg
     from ultralytics.utils.callbacks.platform import slugify
     from ultralytics.utils.downloads import GITHUB_ASSETS_NAMES
 
-    args = yolo_args(tokens, "watch")
+    args = yolo_args(tokens, "watch", "capture_dataset_version")
     if not isinstance(args.get("data"), str) or not args["data"]:
         raise ValueError("data= is required: use a Platform dataset URI or local dataset")
     args.setdefault("model", TASK2MODEL.get(args.get("task"), "yolo26n.pt"))
     args.setdefault("epochs", DEFAULT_CFG_DICT["epochs"])
     cfg = get_cfg(DEFAULT_CFG_DICT | args | {"mode": "train"})  # validate local-only arguments before the paid job
     gpu_type, project, name = args.pop("gpu_type", NOT_GIVEN), args.pop("project", None), args.pop("name", None)
-    watch = args.pop("watch", False)
+    watch, capture = args.pop("watch", False), args.pop("capture_dataset_version", NOT_GIVEN)
     for key in ("device", "exist_ok", "save_dir"):  # local-only arguments; the worker assigns its own GPU
         args.pop(key, None)
     if "cache" in args and not isinstance(args["cache"], str):
@@ -479,7 +480,9 @@ def cloud_train(client: Platform, tokens: list[str]) -> int:
         if name:
             body |= {"model": slugify(name), "name": name}
         target = client.models.create(body=body)
-        started = client.training.start(model_id=target["id"], train_args=args, gpu_type=gpu_type)
+        started = client.training.start(
+            model_id=target["id"], train_args=args, gpu_type=gpu_type, capture_dataset_version=capture
+        )
         uri = f"ul://{target['owner']}/{target['project']}/{target['model']}"
         print(f"Model: {uri}")
         print(
