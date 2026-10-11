@@ -199,6 +199,9 @@ def yolo_args(tokens: list[str], *extra: str) -> dict:
     args = {key: value for key, value in args.items() if value is not None}  # null means unset, as in default.yaml
     for key in args.keys() & {"project", "name", "save_dir"}:
         args[key] = str(args[key])
+    for value in (str(args[key]) for key in args.keys() & {"model", "data"}):  # ultralytics' rule, before any request
+        if value.startswith("ul://") and (len(parts := value[5:].split("/")) != 3 or not all(parts)):
+            raise ValueError(f"Invalid Platform URI: {value}. Use ul://owner/project/model or ul://owner/datasets/name")
     if "model" in args and not str(args["model"]).startswith("ul://"):  # URIs may end in a stem
         args["model"] = str(check_model_file_from_stem(str(args["model"])))  # yolo26n -> yolo26n.pt, as YOLO does
     return args
@@ -677,7 +680,7 @@ def cloud_download(client: Platform, tokens: list[str]) -> int:
 
     args = yolo_args(tokens)
     uri = str(args.get("model", ""))
-    if not uri.startswith("ul://") or len(uri[5:].split("/")) != 3:
+    if not uri.startswith("ul://"):
         raise ValueError("model= must be a ul://owner/project/model URI")
     return download_model(client, uri, get_cfg(DEFAULT_CFG_DICT | args | {"mode": "train"}))
 
