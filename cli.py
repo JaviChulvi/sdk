@@ -208,11 +208,24 @@ def yolo_args(tokens: list[str], *extra: str) -> dict:
 
 
 def resolve_project(client: Platform, project: str | None) -> tuple[str, str]:
-    """Return the owner and slug of an existing project, creating the private cloud-training default."""
+    """Return the owner and slug of an existing project, creating the private cloud-training default.
+
+    project= names the same Platform project as in local training: an existing username before the first slash selects
+    that workspace, and the remaining path joins with dashes.
+    """
     from ultralytics.utils.callbacks.platform import slugify
 
     owner = client.account.summary()["username"]
-    slug = slugify(Path(str(project)).resolve().name) if project else "cloud-training"
+    prefix, slash, path = str(project).partition("/")
+    slug = slugify(path.replace("/", "-") if slash else prefix) if project else "cloud-training"
+    if not slug:
+        raise ValueError(f"project= has no project name: {project}")
+    if slash and prefix:
+        try:
+            owner = client.account.profile(username=prefix.lower())["user"]["username"]
+        except APIError as error:
+            if error.status_code not in {400, 404}:  # not a username: a local directory, as in local training
+                raise
     try:
         if client.projects.retrieve(owner, slug)["project"]["visibility"] != "private" and project is None:
             raise ValueError("Project cloud-training is public; pass project= or make it private")
