@@ -695,13 +695,33 @@ def cloud_export(client: Platform, tokens: list[str]) -> int:
 
 def cloud_download(client: Platform, tokens: list[str]) -> int:
     """ul cloud download model=ul://owner/project/model [project=runs/detect name=train exist_ok=True]
+    ul cloud download data=ul://owner/datasets/slug [save_dir=path]
 
     Waits for training to finish, then saves weights/best.pt, args.yaml, results.csv, and results.json under YOLO's
     save directory, exactly as `ul cloud train ... watch` does.
+    data= instead downloads the full dataset as YOLO files under save_dir=, then project=, else YOLO's datasets
+    directory, and prints the path to train with; rerun after an interruption to reuse completed downloads.
     """
     from ultralytics.cfg import DEFAULT_CFG_DICT, get_cfg
 
     args = yolo_args(tokens)
+    if "data" in args:
+        if unsupported := args.keys() - {"data", "save_dir", "project"}:
+            raise ValueError(f"Unsupported dataset download arguments: {', '.join(sorted(unsupported))}")
+        uri = str(args["data"])
+        if not uri.startswith("ul://") or uri.split("/")[3] != "datasets":
+            raise ValueError("data= must be a ul://owner/datasets/slug URI")
+        import asyncio
+
+        from ultralytics.data.converter import convert_ndjson_to_yolo
+
+        directory = args.get("save_dir") or args.get("project")
+        try:
+            path = asyncio.run(convert_ndjson_to_yolo(uri, Path(directory).expanduser() if directory else None))
+        except RuntimeError as error:  # incomplete image downloads
+            raise CloudJobError(str(error)) from error
+        print(f"Dataset ready: data={path.resolve()}")
+        return 0
     uri = str(args.get("model", ""))
     if not uri.startswith("ul://"):
         raise ValueError("model= must be a ul://owner/project/model URI")
