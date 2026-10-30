@@ -720,9 +720,6 @@ def cloud_download(client: Platform, tokens: list[str]) -> int:
             path = asyncio.run(convert_ndjson_to_yolo(uri, Path(directory).expanduser() if directory else None))
         except RuntimeError as error:  # incomplete image downloads
             raise CloudJobError(str(error)) from error
-        except KeyboardInterrupt:
-            print("Interrupted; rerun the same command to reuse completed downloads", file=sys.stderr)
-            return 130
         print(f"Dataset ready: data={path.resolve()}")
         return 0
     uri = str(args.get("model", ""))
