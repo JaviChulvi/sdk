@@ -23,8 +23,8 @@ def get_api_key() -> str | None:
     else:
         return None
     # Select the same directory as the settings writer; never revive a key from another location after logout.
-    existing = next(p for p in (directory, *directory.parents) if p.exists())
-    if not existing.is_dir() or (existing != directory and not os.access(existing, os.W_OK)):
+    existing = next(p for p in (directory, *directory.parents) if os.path.exists(p))
+    if not existing.is_dir() or (existing != directory and not os.access(existing, os.W_OK | os.X_OK)):
         windows = sys.platform == "win32"
         directory = Path(tempfile.gettempdir()) / ("Ultralytics" if windows else f"Ultralytics-{os.getuid()}")
         with suppress(OSError):
