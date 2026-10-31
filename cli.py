@@ -531,7 +531,7 @@ def prediction_result(image, path: str, prediction: dict, names: dict, task: str
 
     rows, values = prediction["results"], {}
     if task == "classify":
-        values["probs"] = np.zeros(max(names) + 1, dtype=np.float32)
+        values["probs"] = np.zeros(max(row["class"] for row in rows) + 1, dtype=np.float32)
         for row in rows:
             values["probs"][row["class"]] = row["confidence"]
     elif task not in {"semantic", "depth"}:
