@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import sys
 import tempfile
-from contextlib import suppress
 from pathlib import Path
 
 
@@ -23,15 +23,15 @@ def get_api_key() -> str | None:
     else:
         return None
     # Select the same directory as the settings writer; never revive a key from another location after logout.
-    existing = next(p for p in (directory, *directory.parents) if os.path.lexists(p))
-    if not os.path.isdir(existing) or (existing != directory and not os.access(existing, os.W_OK | os.X_OK)):
-        windows = sys.platform == "win32"
-        directory = Path(tempfile.gettempdir()) / ("Ultralytics" if windows else f"Ultralytics-{os.getuid()}")
-        with suppress(OSError):
-            info = directory.lstat()
-            if not windows and (info.st_uid, info.st_mode & 0o777) != (os.getuid(), 0o700):
-                return None  # the writer never uses a foreign, shared or symlinked directory
     try:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            windows = sys.platform == "win32"
+            directory = Path(tempfile.gettempdir()) / ("Ultralytics" if windows else f"Ultralytics-{os.getuid()}")
+            st = directory.lstat()
+            if not (stat.S_ISDIR(st.st_mode) and (windows or (st.st_uid, st.st_mode & 0o777) == (os.getuid(), 0o700))):
+                return None  # the writer never uses a foreign, shared or symlinked directory
         settings = json.loads((directory / "settings.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None

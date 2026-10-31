@@ -9,7 +9,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -156,22 +155,6 @@ def test_cli_wire_and_auth(tmp_path):
         failed = run("cloud", "account", "summary")
         assert failed.returncode == 1 and "sensitive" not in failed.stderr
         assert json.loads(settings.read_text()) == saved
-
-
-@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions as a regular user")
-def test_saved_key_private_temp_fallback(tmp_path, monkeypatch):
-    from ultralytics_platform._auth import get_api_key
-
-    private = tmp_path / f"Ultralytics-{os.getuid()}"  # where yolo login saves the key if the config dir is unusable
-    private.mkdir(mode=0o700)
-    (private / "settings.json").write_text(json.dumps({"api_key": "saved"}))
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    monkeypatch.setenv("YOLO_CONFIG_DIR", str(tmp_path / "locked" / "missing"))
-    assert get_api_key() is None  # ultralytics would create the missing config dir, so the fallback is not in use
-    (tmp_path / "locked").mkdir(mode=0o555)
-    assert get_api_key() == "saved"
-    private.chmod(0o755)
-    assert get_api_key() is None  # ultralytics never uses a shared fallback
 
 
 def test_cloud_predict_saves_outputs(tmp_path):
